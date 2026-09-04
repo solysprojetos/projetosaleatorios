@@ -224,7 +224,7 @@ function rapidasBotoes(l){
   l.forEach(([rotulo,valor]) => {
     const b = document.createElement('button');
     b.textContent = rotulo;
-    b.onclick = () => { msg(rotulo,'minha'); rapidas.innerHTML=''; processar(valor); };
+    b.onclick = () => { msg(rotulo,'minha'); rapidas.innerHTML=''; processar(valor); acaoCliente(); };
     rapidas.appendChild(b);
   });
 }
@@ -255,7 +255,7 @@ function abrirLista(botao){
     const b = document.createElement('button');
     b.className = 'item';
     b.innerHTML = '<span>' + op + '</span><span class="radio"></span>';
-    b.onclick = () => { fecharLista(); escolher(op); };
+    b.onclick = () => { fecharLista(); escolher(op); acaoCliente(); };
     lista.appendChild(b);
   });
   fundo.classList.add('on');
@@ -280,9 +280,59 @@ function escolher(op){
   }
 }
 
+/* ---- Inatividade: avisos automáticos e encerramento ---- */
+// MODO_DEMO = true troca minutos por segundos, para testar sem esperar.
+// Em produção deixe false.
+const MODO_DEMO = false;
+const UNIDADE = MODO_DEMO ? 1000 : 60000; // 1 unidade = 1 s (demo) ou 1 min (produção)
+
+// Cada espera é contada a partir do passo anterior. O relógio reinicia
+// sempre que o cliente envia algo (mensagem, opção ou botão).
+const ESPERA_1_AVISO  = 5;                      // 5 min sem resposta  -> 1º "ainda está aí?"
+const ESPERA_2_AVISO  = 10;                     // +10 min sem resposta -> 2º "ainda está aí?"
+const ESPERA_ENCERRAR = MODO_DEMO ? 10 : 12*60; // +12 h com o atendimento aberto -> mensagem final (demo: 10 s)
+
+const AVISO_AINDA_AI = 'O(a) senhor(a) ainda está aí? Seguimos à disposição para continuar o seu atendimento.';
+
+const ETAPAS_INATIVIDADE = [
+  { apos: ESPERA_1_AVISO,                                    fazer: () => bot(AVISO_AINDA_AI) },
+  { apos: ESPERA_1_AVISO + ESPERA_2_AVISO,                   fazer: () => bot(AVISO_AINDA_AI) },
+  { apos: ESPERA_1_AVISO + ESPERA_2_AVISO + ESPERA_ENCERRAR, fazer: () => encerrarPorInatividade() }
+];
+
+let temporizadores = [];
+
+function limparInatividade(){
+  temporizadores.forEach(clearTimeout);
+  temporizadores = [];
+}
+
+function agendarInatividade(){
+  limparInatividade();
+  if (estado === 'encerrado') return;
+  ETAPAS_INATIVIDADE.forEach(etapa => {
+    const id = setTimeout(() => {
+      if (estado === 'encerrado') return;
+      etapa.fazer();
+    }, etapa.apos * UNIDADE);
+    temporizadores.push(id);
+  });
+}
+
+// Chame sempre que o cliente interagir (digitar, escolher opção, tocar em botão).
+function acaoCliente(){ agendarInatividade(); }
+
+function encerrarPorInatividade(){
+  limparInatividade();
+  estado = 'encerrado';
+  limpaRapidas();
+  bot('Como não tivemos retorno nos últimos minutos, vamos finalizar este atendimento por enquanto para não deixar sua solicitação aberta desnecessariamente.\n\nMas fique tranquilo(a): caso ainda precise de ajuda, é só nos chamar novamente que daremos continuidade ao seu atendimento. 😊');
+}
+
 function iniciar(){
   conversa.innerHTML = '';
   limpaRapidas();
+  limparInatividade();
   estado = 'saudacao'; tentativas = 0;
   entrada.disabled = false; enviar.disabled = false;
   const d = document.createElement('div');
@@ -354,6 +404,7 @@ function processar(texto){
 
 function transbordo(){
   estado = 'encerrado';
+  limparInatividade();
   if (document.getElementById('atendentes').checked){
     bot('Estou te transferindo para um atendente. Um momento, por favor.', limpaRapidas);
   } else {
@@ -362,6 +413,7 @@ function transbordo(){
 }
 function encerrar(){
   estado = 'encerrado';
+  limparInatividade();
   bot('Agradecemos o contato. Estamos à disposição sempre que precisar.', limpaRapidas);
 }
 
@@ -372,6 +424,7 @@ enviar.onclick = () => {
   msg(v,'minha');
   limpaRapidas();
   processar(v);
+  acaoCliente();
 };
 entrada.addEventListener('keydown', e => { if (e.key === 'Enter') enviar.click(); });
 document.getElementById('reiniciar').onclick = iniciar;
