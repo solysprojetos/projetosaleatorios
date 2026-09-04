@@ -290,14 +290,17 @@ const UNIDADE = MODO_DEMO ? 1000 : 60000; // 1 unidade = 1 s (demo) ou 1 min (pr
 // sempre que o cliente envia algo (mensagem, opção ou botão).
 const ESPERA_1_AVISO  = 5;                      // 5 min sem resposta  -> 1º "ainda está aí?"
 const ESPERA_2_AVISO  = 10;                     // +10 min sem resposta -> 2º "ainda está aí?"
-const ESPERA_ENCERRAR = MODO_DEMO ? 10 : 12*60; // +12 h com o atendimento aberto -> mensagem final (demo: 10 s)
+const ESPERA_FINAL    = 10;                     // +10 min sem resposta -> mensagem final (atendimento pausado)
+// Depois da mensagem final o atendimento fica pausado por 12 h: se o cliente
+// voltar nesse período, continua de onde parou; passado isso, começa do zero.
+const JANELA_RETOMADA = MODO_DEMO ? 20 : 12*60; // demo: 20 s
 
 const AVISO_AINDA_AI = 'O(a) senhor(a) ainda está aí? Seguimos à disposição para continuar o seu atendimento.';
 
 const ETAPAS_INATIVIDADE = [
-  { apos: ESPERA_1_AVISO,                                    fazer: () => bot(AVISO_AINDA_AI) },
-  { apos: ESPERA_1_AVISO + ESPERA_2_AVISO,                   fazer: () => bot(AVISO_AINDA_AI) },
-  { apos: ESPERA_1_AVISO + ESPERA_2_AVISO + ESPERA_ENCERRAR, fazer: () => encerrarPorInatividade() }
+  { apos: ESPERA_1_AVISO,                                 fazer: () => bot(AVISO_AINDA_AI) },
+  { apos: ESPERA_1_AVISO + ESPERA_2_AVISO,                fazer: () => bot(AVISO_AINDA_AI) },
+  { apos: ESPERA_1_AVISO + ESPERA_2_AVISO + ESPERA_FINAL, fazer: () => pausarPorInatividade() }
 ];
 
 let temporizadores = [];
@@ -309,10 +312,10 @@ function limparInatividade(){
 
 function agendarInatividade(){
   limparInatividade();
-  if (estado === 'encerrado') return;
+  if (estado === 'encerrado' || estado === 'pausado') return;
   ETAPAS_INATIVIDADE.forEach(etapa => {
     const id = setTimeout(() => {
-      if (estado === 'encerrado') return;
+      if (estado === 'encerrado' || estado === 'pausado') return;
       etapa.fazer();
     }, etapa.apos * UNIDADE);
     temporizadores.push(id);
@@ -322,17 +325,37 @@ function agendarInatividade(){
 // Chame sempre que o cliente interagir (digitar, escolher opção, tocar em botão).
 function acaoCliente(){ agendarInatividade(); }
 
-function encerrarPorInatividade(){
+let estadoAnterior = null; // onde a conversa estava quando foi pausada
+let pausadoEm = 0;         // quando a mensagem final foi enviada
+
+function pausarPorInatividade(){
   limparInatividade();
-  estado = 'encerrado';
+  estadoAnterior = estado;
+  pausadoEm = Date.now();
+  estado = 'pausado';
   limpaRapidas();
   bot('Como não tivemos retorno nos últimos minutos, vamos finalizar este atendimento por enquanto para não deixar sua solicitação aberta desnecessariamente.\n\nMas fique tranquilo(a): caso ainda precise de ajuda, é só nos chamar novamente que daremos continuidade ao seu atendimento. 😊');
+}
+
+// Cliente voltou a escrever depois da mensagem final.
+function retomar(texto){
+  const dentroDaJanela = Date.now() - pausadoEm < JANELA_RETOMADA * UNIDADE;
+  const anterior = estadoAnterior;
+  estadoAnterior = null; pausadoEm = 0;
+  if (dentroDaJanela){
+    estado = anterior;
+    bot('Que bom que voltou! Vamos dar continuidade ao seu atendimento de onde paramos.', () => processar(texto));
+  } else {
+    estado = 'saudacao';
+    processar(texto);
+  }
 }
 
 function iniciar(){
   conversa.innerHTML = '';
   limpaRapidas();
   limparInatividade();
+  estadoAnterior = null; pausadoEm = 0;
   estado = 'saudacao'; tentativas = 0;
   entrada.disabled = false; enviar.disabled = false;
   const d = document.createElement('div');
@@ -395,6 +418,8 @@ function processar(texto){
     });
     return;
   }
+
+  if (estado === 'pausado') return retomar(texto);
 
   if (estado === 'encerrado'){
     estado = 'saudacao';
