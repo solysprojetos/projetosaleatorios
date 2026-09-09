@@ -69,6 +69,30 @@ button:focus-visible{outline:2px solid var(--ambar);outline-offset:2px}
 .resumo .ln:last-child{border-bottom:0}
 .resumo .ln b{font:500 13px "Roboto Mono",monospace}
 .resumo .ln.grande b{font:700 20px "Roboto Mono",monospace;color:var(--ambar)}
+
+/* ===== ACRÉSCIMO: eventos, SLA operacional e sincronização ===== */
+:root{--sla-alerta:#f2c94c;--sla-excedido:#ff5a5a;}
+.op-sla{display:flex;align-items:center;gap:8px;margin-top:11px;padding-top:10px;border-top:1px dashed var(--borda)}
+.op-sla .rot{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--apagado)}
+.op-sla b{font:700 16px "Roboto Mono",monospace;color:var(--ok);margin-left:auto}
+.estado-ok{color:var(--ok)!important}
+.estado-alerta{color:var(--sla-alerta)!important}
+.estado-excedido{color:var(--sla-excedido)!important}
+
+.sync{margin:11px 0 0;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;letter-spacing:.03em}
+.sync.processando{color:var(--ambar)}
+.sync.aguardando{color:var(--sla-alerta)}
+.sync.erro{color:var(--sla-excedido)}
+.sync .ponto-anim{width:8px;height:8px;border-radius:50%;background:currentColor;animation:pisca 1s ease-in-out infinite}
+@keyframes pisca{0%,100%{opacity:.35}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.ponto-anim{animation:none}}
+
+/* linha do tempo enviada para a central */
+.linha-tempo .item{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--borda);font-size:12px}
+.linha-tempo .item:last-child{border-bottom:0}
+.linha-tempo .item span{color:#d6d6d6}
+.linha-tempo .item b{font:500 12px "Roboto Mono",monospace;color:var(--apagado)}
+.linha-tempo .vazio{font-size:12px;color:var(--apagado);margin:0}
 </style>
 </head>
 <body>
@@ -106,6 +130,9 @@ button:focus-visible{outline:2px solid var(--ambar);outline-offset:2px}
 
   <div class="corpo">
 
+    <!-- status de sincronização com a central -->
+    <p class="sync oculto" id="sync"><span class="ponto-anim"></span><span id="syncTxt"></span></p>
+
     <!-- 1 ACEITE -->
     <section class="bloco" id="b1">
       <h2>Novo chamado para você</h2>
@@ -123,11 +150,19 @@ button:focus-visible{outline:2px solid var(--ambar);outline-offset:2px}
       </div>
     </section>
 
+    <!-- 1B ACEITO — aceitar o chamado NÃO inicia o deslocamento -->
+    <section class="bloco oculto" id="b1b">
+      <h2>Chamado aceito</h2>
+      <p class="sub">Quando estiver pronto para sair, inicie o deslocamento até a origem. O tempo operacional começa a contar a partir deste momento.</p>
+      <button class="acao principal" id="btnIniciarDeslocamento">Iniciar deslocamento</button>
+    </section>
+
     <!-- 2 A CAMINHO -->
     <section class="bloco oculto" id="b2">
       <h2>A caminho da origem</h2>
       <p class="sub">Rua Padre Guerra, 470 · Parquelândia. A central acompanha sua localização em tempo real.</p>
-      <button class="acao principal" id="btnCheguei">Cheguei na origem</button>
+      <div class="op-sla"><span class="rot">Tempo operacional</span><b id="opTempo">00:00</b></div>
+      <button class="acao principal" id="btnCheguei" style="margin-top:12px">Cheguei na origem</button>
     </section>
 
     <!-- 3 FOTOS ORIGEM -->
@@ -166,17 +201,79 @@ button:focus-visible{outline:2px solid var(--ambar);outline-offset:2px}
       <div class="ln grande"><span>KM total do percurso</span><b id="kmFinal">54,0 km</b></div>
     </section>
 
+    <!-- LINHA DO TEMPO enviada em tempo real para a central -->
+    <section class="bloco linha-tempo" id="linhaTempo">
+      <h2>Linha do tempo · central</h2>
+      <p class="sub">Cada etapa é registrada no sistema com horário oficial do servidor.</p>
+      <div id="ltLista"><p class="vazio">Aguardando primeira etapa…</p></div>
+    </section>
+
   </div>
 </div>
 
+<script src="sla-core.js"></script>
 <script>
 const el = id => document.getElementById(id);
 const num = v => v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
 const mostrar = id => el(id).classList.remove('oculto');
 const esconder = id => el(id).classList.add('oculto');
 
+/* ---- identificação / segurança do link do motorista ---- */
+const P = SLA.lerParamsURL();
+const CTX = {
+  atendimento_id: P.atendimento_id || 'ATD20260909/7262',
+  prestador_id:   P.prestador_id   || 'GUINCHO-04',
+  motorista_id:   P.motorista_id   || 'MOT-01'
+};
+
+/* localização (melhor esforço) para anexar aos eventos */
+const GEO = { lat:null, lng:null };
+try{ navigator.geolocation && navigator.geolocation.getCurrentPosition(
+  p=>{ GEO.lat=p.coords.latitude; GEO.lng=p.coords.longitude; }, ()=>{}, {timeout:5000}); }catch(_){}
+
+/* ---- status de sincronização ---- */
+function mostrarSync(tipo, txt){ el('sync').className='sync '+tipo; el('syncTxt').textContent=txt; }
+function limparSync(){ el('sync').className='sync oculto'; }
+
+/* ---- CAMADA ÚNICA: registra evento no backend com horário oficial ---- */
+async function registrar(evento, status, extra){
+  mostrarSync('processando','SINCRONIZANDO...');
+  try{
+    const r = await SLA.registrarEvento({
+      atendimento_id: CTX.atendimento_id, prestador_id: CTX.prestador_id, motorista_id: CTX.motorista_id,
+      evento, status: status || evento,
+      km: kmAcumulado || null, latitude: GEO.lat, longitude: GEO.lng,
+      dados_adicionais: extra || null
+    }, { onPendente: ()=> mostrarSync('aguardando','AGUARDANDO SINCRONIZAÇÃO…') });
+    limparSync();
+    return r;
+  }catch(e){ mostrarSync('erro','Erro de sincronização. Tente novamente.'); throw e; }
+}
+
+/* ---- linha do tempo (o que a central recebe em tempo real) ---- */
+const ROTULOS = {
+  MOTORISTA_VISUALIZOU:'Motorista visualizou', MOTORISTA_ACEITOU:'Motorista aceitou',
+  MOTORISTA_RECUSOU:'Motorista recusou', DESLOCAMENTO_INICIADO:'Iniciou deslocamento',
+  CHEGOU_ORIGEM:'Chegou à origem', VISTORIA_ORIGEM_INICIADA:'Vistoria da origem iniciada',
+  VISTORIA_ORIGEM_CONCLUIDA:'Vistoria da origem concluída', VEICULO_RECOLHIDO:'Veículo recolhido',
+  SAIU_PARA_DESTINO:'Saiu para o destino', CHEGOU_DESTINO:'Chegou ao destino',
+  VISTORIA_DESTINO_INICIADA:'Vistoria do destino iniciada', VISTORIA_DESTINO_CONCLUIDA:'Vistoria do destino concluída',
+  ATENDIMENTO_FINALIZADO:'Atendimento finalizado'
+};
+window.addEventListener('acionamento:evento', e=>{
+  const { evt, resp } = e.detail;
+  if(evt.atendimento_id !== CTX.atendimento_id || !ROTULOS[evt.evento]) return;
+  const lista = el('ltLista');
+  const vazio = lista.querySelector('.vazio'); if(vazio) vazio.remove();
+  const linha = document.createElement('div');
+  linha.className = 'item';
+  linha.innerHTML = '<span>'+ROTULOS[evt.evento]+'</span><b>'+SLA.hhmm(resp.servidor_hora)+'</b>';
+  lista.appendChild(linha);
+});
+
 const TRECHOS = [6.8, 24.9, 22.3];
 let kmAcumulado = 0;
+let cronOp = null;   // cronômetro operacional (a partir do deslocamento)
 
 /* animação do guincho sobre a linha */
 const linha = el('linha');
@@ -229,41 +326,105 @@ function montarFotos(container, contador, botao){
 montarFotos('fotosOrigem','contOrigem','btnSairOrigem');
 montarFotos('fotosDestino','contDestino','btnFinalizar');
 
-/* fluxo */
-el('btnAceitar').addEventListener('click',()=>{
-  esconder('b1'); mostrar('b2');
-  el('tag').textContent = 'A caminho';
-  el('rotuloMapa').textContent = 'A caminho da origem';
-  mover(MARCOS[0], MARCOS[1], TRECHOS[0]);
-});
+/* ---- trava contra duplo clique enquanto sincroniza ---- */
+let ocupado = false;
+function comLock(fn){
+  return async ()=>{ if(ocupado) return; ocupado = true; try{ await fn(); }catch(_){ } finally{ ocupado = false; } };
+}
 
-el('btnRecusar').addEventListener('click',()=>{
+/* ---- abertura do link: valida acesso e registra a visualização ---- */
+(async function abrir(){
+  const acesso = await SLA.validarAcesso({
+    atendimento_id: CTX.atendimento_id, prestador_id: CTX.prestador_id,
+    motorista_id: CTX.motorista_id, token: P.token, validade: P.validade
+  });
+  if(!acesso.ok){
+    el('b1').innerHTML = '<h2>Acesso não autorizado</h2><p class="sub">Este link não é válido para este atendimento.</p>';
+    return;
+  }
+  await SLA.carregarConfig(CTX.atendimento_id);
+  await SLA.carregarLinhaTempo(CTX.atendimento_id);
+  SLA.registrarEvento({
+    atendimento_id: CTX.atendimento_id, prestador_id: CTX.prestador_id, motorista_id: CTX.motorista_id,
+    evento:'MOTORISTA_VISUALIZOU', status:'VISUALIZADO'
+  }).catch(()=>{});
+})();
+
+/* fluxo — aceitar NÃO inicia o deslocamento */
+el('btnAceitar').addEventListener('click', comLock(async ()=>{
+  el('btnAceitar').disabled = true; el('btnRecusar').disabled = true;
+  try{
+    await registrar('MOTORISTA_ACEITOU','ACEITO');
+  }catch(e){ el('btnAceitar').disabled = false; el('btnRecusar').disabled = false; return; }
+  esconder('b1'); mostrar('b1b');
+  el('tag').textContent = 'Aceito';
+  el('rotuloMapa').textContent = 'Aguardando início do deslocamento';
+}));
+
+el('btnRecusar').addEventListener('click', comLock(async ()=>{
+  el('btnAceitar').disabled = true; el('btnRecusar').disabled = true;
+  try{
+    await registrar('MOTORISTA_RECUSOU','RECUSADO');
+  }catch(e){ el('btnAceitar').disabled = false; el('btnRecusar').disabled = false; return; }
   el('tag').textContent = 'Recusado';
   el('tag').style.background = 'var(--recusa)'; el('tag').style.color = '#fff';
   el('b1').innerHTML = '<h2>Chamado recusado</h2><p class="sub">A central foi avisada e vai repassar para outro guincho.</p>';
   el('rotuloMapa').textContent = 'Chamado recusado';
-});
+}));
 
-el('btnCheguei').addEventListener('click',()=>{
+/* INICIAR DESLOCAMENTO — só aqui começa o tempo operacional e o movimento */
+el('btnIniciarDeslocamento').addEventListener('click', comLock(async ()=>{
+  el('btnIniciarDeslocamento').disabled = true;
+  let r;
+  try{ r = await registrar('DESLOCAMENTO_INICIADO','EM_DESLOCAMENTO'); }
+  catch(e){ el('btnIniciarDeslocamento').disabled = false; return; }
+  esconder('b1b'); mostrar('b2');
+  el('tag').textContent = 'A caminho';
+  el('rotuloMapa').textContent = 'A caminho da origem';
+  cronOp = new SLA.Cronometro({ inicioServidor: r.servidor_hora, limiteSeg: 0, elTempo: el('opTempo') }).iniciar();
+  mover(MARCOS[0], MARCOS[1], TRECHOS[0]);
+}));
+
+el('btnCheguei').addEventListener('click', comLock(async ()=>{
+  el('btnCheguei').disabled = true;
+  try{ await registrar('CHEGOU_ORIGEM'); }
+  catch(e){ el('btnCheguei').disabled = false; return; }
   esconder('b2'); mostrar('b3');
   el('tag').textContent = 'Na origem';
   el('rotuloMapa').textContent = 'Parado na origem';
-});
+  registrar('VISTORIA_ORIGEM_INICIADA').catch(()=>{});
+}));
 
-el('btnSairOrigem').addEventListener('click',()=>{
+el('btnSairOrigem').addEventListener('click', comLock(async ()=>{
+  el('btnSairOrigem').disabled = true;
+  try{
+    await registrar('VISTORIA_ORIGEM_CONCLUIDA', null, { fotos: 4 });
+    await registrar('VEICULO_RECOLHIDO');
+    await registrar('SAIU_PARA_DESTINO');
+  }catch(e){ el('btnSairOrigem').disabled = false; return; }
   esconder('b3'); mostrar('b4');
   el('tag').textContent = 'Em rota';
   el('rotuloMapa').textContent = 'Em rota para o destino';
   mover(MARCOS[1], MARCOS[2], TRECHOS[1]);
-});
+}));
 
-el('btnChegueiDestino').addEventListener('click',()=>{
+el('btnChegueiDestino').addEventListener('click', comLock(async ()=>{
+  el('btnChegueiDestino').disabled = true;
+  try{ await registrar('CHEGOU_DESTINO'); }
+  catch(e){ el('btnChegueiDestino').disabled = false; return; }
   esconder('b4'); mostrar('b5');
   el('tag').textContent = 'No destino';
   el('rotuloMapa').textContent = 'Parado no destino';
-});
+  registrar('VISTORIA_DESTINO_INICIADA').catch(()=>{});
+}));
 
-el('btnFinalizar').addEventListener('click',()=>{
+el('btnFinalizar').addEventListener('click', comLock(async ()=>{
+  el('btnFinalizar').disabled = true;
+  try{
+    await registrar('VISTORIA_DESTINO_CONCLUIDA', null, { fotos: 4 });
+    await registrar('ATENDIMENTO_FINALIZADO','FINALIZADO', { km_total: kmAcumulado + TRECHOS[2] });
+  }catch(e){ el('btnFinalizar').disabled = false; return; }
+  if(cronOp) cronOp.parar();
   esconder('b5'); mostrar('b6');
   el('tag').textContent = 'Finalizado';
   el('rotuloMapa').textContent = 'Retornando à base';
@@ -271,7 +432,7 @@ el('btnFinalizar').addEventListener('click',()=>{
     el('rotuloMapa').textContent = 'Percurso concluído';
     el('kmFinal').textContent = num(kmAcumulado)+' km';
   });
-});
+}));
 </script>
 </body>
 </html>

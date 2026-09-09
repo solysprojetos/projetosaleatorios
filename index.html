@@ -89,6 +89,44 @@ button:focus-visible{outline:2px solid var(--ambar);outline-offset:2px}
 .pc .colunas{grid-template-columns:1.35fr 1fr;align-items:start;padding:0 22px 22px;gap:18px}
 .pc .aviso{margin:20px 22px}
 .pc .direita{display:grid;gap:16px;align-content:start}
+
+/* ===== ACRÉSCIMO: controle de tempo + SLA (não altera o que já existe) ===== */
+:root{--sla-alerta:#f2c94c;--sla-alerta-bg:#3a2f0c;--sla-excedido:#ff5a5a;--sla-excedido-bg:#3a1414;}
+.sla{background:var(--placa);border:1px solid var(--borda);border-radius:10px;padding:11px 13px;margin-bottom:14px}
+.sla-linhas{display:grid;gap:5px;margin-bottom:9px}
+.sla-linha{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12px}
+.sla-linha span{color:var(--apagado);text-transform:uppercase;letter-spacing:.05em;font-size:11px}
+.sla-linha b{font:500 12.5px "Roboto Mono",monospace;color:#d6d6d6}
+.sla-timer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:9px;border-top:1px dashed var(--borda)}
+.sla-rot{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--apagado)}
+.sla-cron{font:700 20px "Roboto Mono",monospace;color:var(--ok);margin-left:auto;transition:color .2s}
+.sla-estado{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:4px 9px;border-radius:999px;background:#12261a;color:var(--ok);border:1px solid #23503a;white-space:nowrap}
+/* estados do SLA */
+.estado-ok{color:var(--ok)!important}
+.sla-estado.estado-ok{background:#12261a;color:var(--ok);border-color:#23503a}
+.estado-alerta{color:var(--sla-alerta)!important}
+.sla-estado.estado-alerta{background:var(--sla-alerta-bg);color:var(--sla-alerta);border-color:#6b551a}
+.estado-excedido{color:var(--sla-excedido)!important}
+.sla-estado.estado-excedido{background:var(--sla-excedido-bg);color:var(--sla-excedido);border-color:#6b2222}
+
+/* recusa — motivos */
+.recusa-box{margin-top:12px;border:1px solid var(--recusa);border-radius:10px;padding:13px;background:#20100f}
+.recusa-box .recusa-tit{margin:0 0 9px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#f0b4b4}
+.motivos{display:grid;gap:7px;margin-bottom:10px}
+.motivos label{display:flex;align-items:center;gap:9px;font-size:12.5px;color:#e6e6e6;cursor:pointer}
+.motivos input{accent-color:var(--ambar)}
+.recusaObs{width:100%;min-height:58px;resize:vertical;background:#151515;border:1px solid var(--borda);border-radius:8px;color:var(--texto);font:400 12.5px Inter,sans-serif;padding:8px;margin-bottom:10px}
+
+/* status de sincronização */
+.sync{margin:11px 0 0;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;letter-spacing:.03em}
+.sync.processando{color:var(--ambar)}
+.sync.aguardando{color:var(--sla-alerta)}
+.sync.erro{color:var(--sla-excedido)}
+.sync.okmsg{color:var(--ok)}
+.sync .ponto-anim{width:8px;height:8px;border-radius:50%;background:currentColor;animation:pisca 1s ease-in-out infinite}
+@keyframes pisca{0%,100%{opacity:.35}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.ponto-anim{animation:none}}
+.btnTentar{margin-top:8px}
 </style>
 </head>
 <body>
@@ -116,6 +154,20 @@ button:focus-visible{outline:2px solid var(--ambar);outline-offset:2px}
       <section class="passo pronto p1">
         <h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg> 1. Confirmação de valor e aceite</h2>
         <p class="sub">Obrigatório: confira o valor do serviço e aceite o acionamento.</p>
+
+        <!-- SLA 1 · CENTRAL → ACEITE DO PRESTADOR (horário oficial do servidor) -->
+        <div class="sla sla1">
+          <div class="sla-linhas">
+            <div class="sla-linha"><span>Acionamento enviado</span><b class="slaEnviado">—</b></div>
+            <div class="sla-linha"><span>Visualizado</span><b class="slaVisto">—</b></div>
+          </div>
+          <div class="sla-timer">
+            <span class="sla-rot">Tempo para aceite</span>
+            <b class="sla-cron slaCron1">00:00</b>
+            <span class="sla-estado slaEstado1">Dentro do SLA</span>
+          </div>
+        </div>
+
         <div class="valores">
           <div class="ln"><div class="rot">KM total do serviço<small class="detRota">—</small></div><b class="kmTotal">—</b></div>
           <div class="rota">
@@ -139,6 +191,30 @@ button:focus-visible{outline:2px solid var(--ambar);outline-offset:2px}
           </button>
           <button class="acao recusar btnRecusar">Recusar</button>
         </div>
+
+        <!-- status de sincronização com o servidor -->
+        <p class="sync oculto syncMsg"><span class="ponto-anim"></span><span class="syncTxt"></span></p>
+        <button class="acao principal btnTentar oculto">Tentar novamente</button>
+
+        <!-- motivos da recusa -->
+        <div class="recusa-box oculto recusaBox">
+          <p class="recusa-tit">Motivo da recusa</p>
+          <div class="motivos">
+            <label><input type="radio" name="motivo" value="Valor"> Valor</label>
+            <label><input type="radio" name="motivo" value="Distância"> Distância</label>
+            <label><input type="radio" name="motivo" value="Sem veículo disponível"> Sem veículo disponível</label>
+            <label><input type="radio" name="motivo" value="Motorista indisponível"> Motorista indisponível</label>
+            <label><input type="radio" name="motivo" value="Fora da área"> Fora da área</label>
+            <label><input type="radio" name="motivo" value="Problema mecânico"> Problema mecânico</label>
+            <label><input type="radio" name="motivo" value="Outro"> Outro</label>
+          </div>
+          <textarea class="recusaObs oculto" placeholder="Descreva o motivo da recusa"></textarea>
+          <div class="dupla">
+            <button class="acao recusar btnConfirmarRecusa">Confirmar recusa</button>
+            <button class="acao principal btnCancelarRecusa">Voltar</button>
+          </div>
+        </div>
+
         <p class="confirmado oculto okValor">✓ Valor confirmado e acionamento aceito.</p>
       </section>
 
@@ -146,6 +222,17 @@ button:focus-visible{outline:2px solid var(--ambar);outline-offset:2px}
         <section class="passo p3">
           <h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="6" width="14" height="10" rx="1"/><path d="M15 9h4l3 3v4h-7z"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg> 2. Enviar para motorista</h2>
           <p class="bloqueio msg3">⚠ Confirme e aceite o acionamento para enviar.</p>
+
+          <!-- SLA 2 · PRESTADOR → ENVIO AO MOTORISTA -->
+          <div class="sla sla2 oculto">
+            <div class="sla-timer">
+              <span class="sla-rot">Tempo para enviar ao motorista</span>
+              <b class="sla-cron slaCron2">00:00</b>
+              <span class="sla-estado slaEstado2">Dentro do SLA</span>
+            </div>
+          </div>
+
+          <p class="sync oculto syncEnvio"><span class="ponto-anim"></span><span class="syncEnvioTxt"></span></p>
           <button class="acao btnEnviar" disabled>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg> Enviar para motorista
           </button>
@@ -176,9 +263,20 @@ button:focus-visible{outline:2px solid var(--ambar);outline-offset:2px}
   </div>
 </div>
 
+<script src="sla-core.js"></script>
 <script>
 const brl = v => v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const num = v => v.toLocaleString('pt-BR',{maximumFractionDigits:1});
+
+/* Identificação/segurança do acionamento (vem da URL; token/validade são
+   validados no backend). Sem parâmetros, usa o acionamento de demonstração. */
+const P = SLA.lerParamsURL();
+const CTX = {
+  atendimento_id: P.atendimento_id || 'ATD20260909/7262',
+  prestador_id:   P.prestador_id   || 'GUINCHO-04',
+  motorista_id:   P.motorista_id   || 'MOT-01',
+  protocolo:      P.atendimento_id || 'ATD20260909/7262'
+};
 
 /* Troque pelo fetch da sua API / Supabase */
 async function carregarAcionamento(){
@@ -198,6 +296,11 @@ function montar(alvo){
   const raiz = alvo.firstElementChild;
   const q = c => raiz.querySelector('.'+c);
 
+  /* estado desta instância (cada tela = um dispositivo) */
+  const st = { dados:null, linha:null, cfg:null, aceito:false, enviado:false,
+               ocupado:false, cron1:null, cron2:null, aceite_em:null };
+
+  /* ---- cálculo original preservado integralmente ---- */
   carregarAcionamento().then(d=>{
     const kmTotal = d.origem.km + d.destino.km + d.retorno.km;
     const exc = Math.max(0, kmTotal - d.kmContratual);
@@ -220,11 +323,110 @@ function montar(alvo){
     q('valExc').textContent = brl(valExc);
     q('detExc').textContent = `${num(exc)} km × ${brl(d.valorKm)}`;
     q('total').textContent = brl(d.valorSaida + valExc);
+
+    /* valores apresentados (usados no evento de aceite enviado ao backend) */
+    d.valorTotal = d.valorSaida + valExc;
+    st.dados = d;
   });
 
-  q('btnConfirmar').addEventListener('click',()=>{
+  /* ================= controle de tempo + SLA 1 (central → aceite) =========== */
+  (async function iniciarSLA(){
+    const acesso = await SLA.validarAcesso({
+      atendimento_id: CTX.atendimento_id, prestador_id: CTX.prestador_id,
+      token: P.token, validade: P.validade
+    });
+    if(!acesso.ok){
+      q('sub') && (q('sub').textContent = 'Acesso não autorizado a este acionamento.');
+      raiz.querySelector('.dupla').classList.add('oculto');
+      return;
+    }
+
+    st.cfg = await SLA.carregarConfig(CTX.atendimento_id);
+    st.linha = await SLA.carregarLinhaTempo(CTX.atendimento_id);
+
+    q('slaEnviado').textContent = 'às ' + SLA.hhmm(st.linha.enviado_em);
+
+    /* registra a VISUALIZAÇÃO no servidor assim que o prestador abre o link */
+    SLA.registrarEvento({
+      atendimento_id: CTX.atendimento_id, prestador_id: CTX.prestador_id,
+      evento:'ACIONAMENTO_VISUALIZADO', status:'VISUALIZADO'
+    }).then(r=>{ q('slaVisto').textContent = 'às ' + SLA.hhmm(r.servidor_hora); })
+      .catch(()=>{ q('slaVisto').textContent = 'às ' + SLA.hhmm(SLA.agoraServidor()); });
+
+    if(st.linha.visualizado_em) q('slaVisto').textContent = 'às ' + SLA.hhmm(st.linha.visualizado_em);
+
+    /* cronômetro visual do SLA de aceite (cálculo oficial usa o servidor) */
+    st.cron1 = new SLA.Cronometro({
+      inicioServidor: st.linha.enviado_em,
+      limiteSeg: st.cfg.sla.aceite_prestador_seg,
+      elTempo: q('slaCron1'), elEstado: q('slaEstado1')
+    }).iniciar();
+  })();
+
+  /* --------- helpers de status de sincronização (passo 1) ---------- */
+  const elSync = q('syncMsg'), elSyncTxt = q('syncTxt');
+  function status(tipo, txt){
+    elSync.className = 'sync syncMsg ' + tipo;   // mantém o marcador .syncMsg
+    elSyncTxt.textContent = txt;
+  }
+  function limparStatus(){ elSync.className = 'sync syncMsg oculto'; }
+
+  /* ======================= ACEITE (registra no backend) ==================== */
+  q('btnConfirmar').addEventListener('click', async ()=>{
+    if(!st.cfg || !st.linha){ status('processando','Carregando acionamento…'); return; }
+    if(st.ocupado || st.aceito) return;           // impede aceite duplicado
+    st.ocupado = true;
+    const btn = q('btnConfirmar');
+    const rotuloOrig = btn.innerHTML;
+    btn.disabled = true; q('btnRecusar').disabled = true;
+    btn.textContent = 'Processando...';
+    q('btnTentar').classList.add('oculto');
+    status('processando', 'PROCESSANDO...');
+
+    const limite = st.cfg.sla.aceite_prestador_seg;
+    const desdeEnvio = Math.round((SLA.agoraServidor() - st.linha.enviado_em)/1000);
+    const desdeVisto = st.linha.visualizado_em
+      ? Math.round((SLA.agoraServidor() - st.linha.visualizado_em)/1000) : null;
+
+    try{
+      const r = await SLA.registrarEvento({
+        atendimento_id: CTX.atendimento_id, prestador_id: CTX.prestador_id,
+        evento:'PRESTADOR_ACEITOU', status:'ACEITO',
+        dados_adicionais:{
+          protocolo: CTX.protocolo,
+          km_total_apresentado: st.dados ? st.dados.kmTotal : null,
+          valor_apresentado: st.dados ? st.dados.valorTotal : null,
+          valor_aceito: st.dados ? st.dados.valorTotal : null,
+          tempo_desde_envio_seg: desdeEnvio,
+          tempo_desde_visualizacao_seg: desdeVisto,
+          sla_limite_seg: limite,
+          resultado_sla: SLA.resultadoSLA(SLA.agoraServidor()-st.linha.enviado_em, limite)
+        }
+      }, { onPendente: ()=> status('aguardando','AGUARDANDO SINCRONIZAÇÃO…') });
+
+      /* SOMENTE após confirmação do servidor a tela vira "ACEITO" */
+      st.aceito = true; st.ocupado = false;
+      st.aceite_em = r.servidor_hora;
+      if(st.cron1) st.cron1.parar();
+      limparStatus();
+      aplicarAceite();
+    }catch(e){
+      /* falha de comunicação: NÃO assume aceito; permite nova tentativa segura */
+      st.ocupado = false;
+      btn.disabled = false; q('btnRecusar').disabled = false;
+      btn.innerHTML = rotuloOrig;
+      status('erro', 'Erro de sincronização. O aceite não foi confirmado.');
+      q('btnTentar').classList.remove('oculto');
+    }
+  });
+
+  q('btnTentar').addEventListener('click', ()=> q('btnConfirmar').click());
+
+  /* aplica os efeitos visuais originais do aceite + libera o passo 2 (SLA 2) */
+  function aplicarAceite(){
     q('btnConfirmar').classList.add('oculto');
     q('btnRecusar').classList.add('oculto');
+    q('recusaBox').classList.add('oculto');
     q('okValor').classList.remove('oculto');
     q('p1').classList.add('feito');
     q('btnEnviar').disabled = false;
@@ -233,21 +435,105 @@ function montar(alvo){
     q('msg3').textContent = 'Escolha o motorista e envie a ordem.';
     q('msg3').style.color = 'var(--apagado)';
     q('tag').textContent = 'Aceito';
+
+    /* SLA 2 · prestador → envio ao motorista, a partir do aceite */
+    q('sla2').classList.remove('oculto');
+    st.cron2 = new SLA.Cronometro({
+      inicioServidor: st.aceite_em,
+      limiteSeg: st.cfg.sla.envio_motorista_seg,
+      elTempo: q('slaCron2'), elEstado: q('slaEstado2')
+    }).iniciar();
+  }
+
+  /* ============================ RECUSA ==================================== */
+  q('btnRecusar').addEventListener('click', ()=>{
+    if(st.aceito || st.ocupado) return;
+    q('recusaBox').classList.remove('oculto');
+  });
+  q('btnCancelarRecusa').addEventListener('click', ()=> q('recusaBox').classList.add('oculto'));
+  raiz.querySelectorAll('input[name="motivo"]').forEach(r=>{
+    r.addEventListener('change', ()=>{
+      q('recusaObs').classList.toggle('oculto', r.value !== 'Outro' || !r.checked);
+    });
   });
 
-  q('btnRecusar').addEventListener('click',()=>{
-    const t = q('tag');
-    t.textContent='Recusado'; t.style.background='var(--recusa)'; t.style.color='#fff';
-    q('btnConfirmar').disabled=true; q('btnRecusar').disabled=true;
-    q('msg3').textContent='Acionamento recusado. A central foi avisada.';
-    q('msg3').style.color='var(--apagado)';
+  q('btnConfirmarRecusa').addEventListener('click', async ()=>{
+    if(!st.cfg || !st.linha){ status('processando','Carregando acionamento…'); return; }
+    if(st.ocupado || st.aceito) return;
+    const sel = raiz.querySelector('input[name="motivo"]:checked');
+    if(!sel){ status('erro','Selecione um motivo para recusar.'); return; }
+    const obs = q('recusaObs').value.trim();
+    st.ocupado = true;
+    q('btnConfirmarRecusa').disabled = true; q('btnCancelarRecusa').disabled = true;
+    status('processando','PROCESSANDO...');
+
+    const decorrido = Math.round((SLA.agoraServidor() - st.linha.enviado_em)/1000);
+    try{
+      await SLA.registrarEvento({
+        atendimento_id: CTX.atendimento_id, prestador_id: CTX.prestador_id,
+        evento:'PRESTADOR_RECUSOU', status:'RECUSADO',
+        dados_adicionais:{
+          protocolo: CTX.protocolo, motivo: sel.value,
+          observacao: sel.value==='Outro' ? obs : null,
+          tempo_ate_recusa_seg: decorrido
+        }
+      }, { onPendente: ()=> status('aguardando','AGUARDANDO SINCRONIZAÇÃO…') });
+
+      st.ocupado = true; // permanece bloqueado após recusar
+      if(st.cron1) st.cron1.parar();
+      limparStatus();
+      q('recusaBox').classList.add('oculto');
+      const t = q('tag');
+      t.textContent='Recusado'; t.style.background='var(--recusa)'; t.style.color='#fff';
+      q('btnConfirmar').disabled=true; q('btnRecusar').disabled=true;
+      q('msg3').textContent='Acionamento recusado. A central foi avisada.';
+      q('msg3').style.color='var(--apagado)';
+    }catch(e){
+      st.ocupado = false;
+      q('btnConfirmarRecusa').disabled = false; q('btnCancelarRecusa').disabled = false;
+      status('erro','Erro de sincronização. A recusa não foi confirmada.');
+    }
   });
 
-  q('btnEnviar').addEventListener('click',()=>{
-    q('p3').classList.add('feito');
-    q('msg3').textContent='Enviado ao motorista. Aguardando início do atendimento.';
-    q('msg3').style.color='var(--ok)';
-    q('btnEnviar').disabled=true; q('tag').textContent='Em rota';
+  /* ==================== ENVIAR PARA MOTORISTA (SLA 2) ===================== */
+  const elSyncEnvio = q('syncEnvio'), elSyncEnvioTxt = q('syncEnvioTxt');
+  function statusEnvio(tipo, txt){
+    elSyncEnvio.className = 'sync syncEnvio ' + tipo;  // mantém o marcador .syncEnvio
+    elSyncEnvioTxt.textContent = txt;
+  }
+
+  q('btnEnviar').addEventListener('click', async ()=>{
+    if(!st.aceito || st.enviado || st.ocupado) return;
+    st.ocupado = true;
+    q('btnEnviar').disabled = true;
+    statusEnvio('processando','PROCESSANDO...');
+
+    const limite = st.cfg.sla.envio_motorista_seg;
+    const entreAceiteEnvio = Math.round((SLA.agoraServidor() - st.aceite_em)/1000);
+    try{
+      await SLA.registrarEvento({
+        atendimento_id: CTX.atendimento_id, prestador_id: CTX.prestador_id,
+        motorista_id: CTX.motorista_id,
+        evento:'ENVIADO_MOTORISTA', status:'ENVIADO_MOTORISTA',
+        dados_adicionais:{
+          protocolo: CTX.protocolo,
+          tempo_entre_aceite_envio_seg: entreAceiteEnvio,
+          sla_limite_seg: limite,
+          resultado_sla: SLA.resultadoSLA(SLA.agoraServidor()-st.aceite_em, limite)
+        }
+      }, { onPendente: ()=> statusEnvio('aguardando','AGUARDANDO SINCRONIZAÇÃO…') });
+
+      st.enviado = true; st.ocupado = false;
+      if(st.cron2) st.cron2.parar();
+      elSyncEnvio.className = 'sync syncEnvio oculto';
+      q('p3').classList.add('feito');
+      q('msg3').textContent='Enviado ao motorista. Aguardando início do atendimento.';
+      q('msg3').style.color='var(--ok)';
+      q('btnEnviar').disabled=true; q('tag').textContent='Em rota';
+    }catch(e){
+      st.ocupado = false; q('btnEnviar').disabled = false;
+      statusEnvio('erro','Erro de sincronização. Reenvie ao motorista.');
+    }
   });
 }
 
